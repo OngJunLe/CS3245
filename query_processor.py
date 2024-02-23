@@ -1,5 +1,6 @@
 import re
-
+import pickle
+from index import linked_list
 
 # should this be a class? like I instantiate a shunting yarder to do
 # all the shunting?
@@ -9,13 +10,21 @@ class QueryProcessor:
     OPERATOR_AND = 2
     OPERATOR_NOT = 3
     OPERATOR_LIST = [OPERATOR_OR, OPERATOR_AND, OPERATOR_NOT]
+    OPERATOR_FUNCTION = {OPERATOR_OR: or_operation, OPERATOR_AND: and_operation, OPERATOR_NOT: not_operation}
 
     LEFT_PARENTHESIS = 0
     RIGHT_PARENTHESIS = -1
 
     regex_pattern = r'\bAND\b|\bOR\b|\bNOT\b|[\(\)]|\w+'
 
-    def __init__(self):
+    def __init__(self, dictionary_file, postings_file, output_file):
+        self.dictionary_file = dictionary_file
+        self.postings_file = postings_file
+        self.output_file = output_file
+        
+        with open(dictionary_file, 'rb') as f:
+            self.dictionary = pickle.load(f)
+
         pass
 
     def process_query(self, query):
@@ -68,15 +77,61 @@ class QueryProcessor:
         return output_queue
 
     def evaluate_postfix(self, postfix):
+        eval_stack = []
+        for token in postfix:
+            if token in self.OPERATOR_LIST:
+                if token == self.OPERATOR_AND:
+                    # not sure if this is space inefficient cos it's creating a new list
+                    # maybe figure out way to not create a new list
+                    eval_stack.append(and_operation(eval_stack.pop(), eval_stack.pop()))
+                elif token == self.OPERATOR_OR:
+                    eval_stack.append(or_operation(eval_stack.pop(), eval_stack.pop()))
+                elif token == self.OPERATOR_NOT:
+                    eval_stack.append(not_operation(eval_stack.pop()))
+            else:
+                eval_stack.append(load_postings_list_from_term(token))
+        return eval_stack[0]
+
+    def load_postings_list_from_term(self, term):
+        if term not in self.dictionary:
+            raise ValueError(f"'{term}' not found in dictionary")
+        
+        offset, bytes_to_read = self.dictionary[term]
+
+        # read the postings list from the postings file
+        with open(self.postings_file, 'rb') as f:
+            f.seek(offset)
+            postings_list = pickle.loads(f.read(bytes_to_read))
+            return postings_list
+
+    def and_operation(self, postings1, postings2):
         return
-                
+
+    def or_operation(self, postings1, postings2):
+        return
+
+    def not_operation(self, postings):
+        return
+
 if __name__ == "__main__":
     
     #query = ['bill', 'OR', 'Gates', 'AND', '(', 'vista', 'OR', 'XP', ')', 'AND', 'NOT', 'mac']
-    query = "bill OR Gates AND (vista OR XP) AND NOT mac"
-    qp = QueryProcessor()
-    print(qp.process_query(query))
+    # query = "bill OR Gates AND (vista OR XP) AND NOT mac"
+    print('a')
+    qp = QueryProcessor('dictionary', 'postings', 'output.txt')
+    # print(qp.process_query(query))
 
+    # print items in current directory
+        # import os
+        # print("Items in current directory:", os.listdir())
 
+    # with open('dictionary', 'rb') as f:
+    #     dictionary = pickle.load(f)
+    # #dictionary = pickle.loads('dictionary')
+    # print(dictionary)
+    print('b')
+
+    pl = qp.load_postings_list_from_term('of')
+    print(pl)
                 
 
