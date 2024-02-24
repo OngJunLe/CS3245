@@ -1,6 +1,6 @@
 import re
 import pickle
-from index import linked_list
+from index import linked_list, Node
 
 # should this be a class? like I instantiate a shunting yarder to do
 # all the shunting?
@@ -105,9 +105,66 @@ class QueryProcessor:
             return postings_list
 
     def and_operation(self, postings1, postings2):
-        return
+        node1 = postings1.head
+        node2 = postings2.head
+        # to keep track of the previous intersecting node in postings1
+        # because postings1 will be modified in place
+        prev1 = None
+
+        while node1 is not None and node2 is not None:
+            if node1.data == node2.data:
+                node2 = node2.next
+                prev1 = node1
+                node1 = node1.next
+            elif node1.data < node2.data:
+                # first intersection node should be made the new head
+                if prev1 is None:
+                    postings1.head = node1.next # remove node1 from postings1
+                else:
+                    prev1.next = node1.next # remove node1 from postings1
+                node1 = node1.next
+            else:
+                node2 = node2.next
+
+        if prev1 is None:
+            postings1.head = None # no intersections found
+        else:
+            prev1.next = None # disconnect remaining elements
+
+        return postings1
 
     def or_operation(self, postings1, postings2):
+        node1 = postings1.head
+        node2 = postings2.head
+
+        # dummy will be removed at the end
+        dummy = Node(None)
+        prev1 = dummy
+        list1.head = dummy
+
+        while node1 is not None and node2 is not None:
+            if node1.data < node2.data:
+                prev1.next = node1
+                prev1 = node1
+                node1 = node1.next
+            elif node1.data > node2.data:
+                prev1.next = node2
+                prev1 = node2
+                node2 = node2.next
+            else:
+                # equal, add one and advance both
+                prev1.next = node1
+                prev1 = node1
+                node1 = node1.next
+                node2 = node2.next
+        
+        # attach remainder of longer list
+        if node1 is not None:
+            prev1.next = node1
+        else:
+            prev1.next = node2
+
+        list1.head = dummy.next
         return
 
     def not_operation(self, postings):
@@ -117,8 +174,8 @@ if __name__ == "__main__":
     
     #query = ['bill', 'OR', 'Gates', 'AND', '(', 'vista', 'OR', 'XP', ')', 'AND', 'NOT', 'mac']
     # query = "bill OR Gates AND (vista OR XP) AND NOT mac"
-    print('a')
-    qp = QueryProcessor('dictionary', 'postings', 'output.txt')
+    # print('a')
+    # qp = QueryProcessor('dictionary', 'postings', 'output.txt')
     # print(qp.process_query(query))
 
     # print items in current directory
@@ -129,9 +186,17 @@ if __name__ == "__main__":
     #     dictionary = pickle.load(f)
     # #dictionary = pickle.loads('dictionary')
     # print(dictionary)
-    print('b')
+    # print('b')
 
-    pl = qp.load_postings_list_from_term('of')
-    print(pl)
+    # pl = qp.load_postings_list_from_term('of')
+    # print(pl)
+    linked_list1 = linked_list()
+    prevNode = Node(0)
+    linked_list1.head = prevNode
+    for i in range(10000000):
+        temp = Node(i)
+        prevNode.next = temp
+        prevNode = temp
+    pickle.dump(linked_list1, open('postings', 'wb'))
                 
 
