@@ -47,7 +47,7 @@ class linked_list:
         while current_node:
             output += str(current_node.data)
             if current_node.next:
-                output += ", "
+                output += " "
             current_node = current_node.next
         return output
 
