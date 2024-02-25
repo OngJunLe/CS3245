@@ -206,28 +206,7 @@ class QueryProcessor:
         universal_postings.head = dummy.next
         return universal_postings
 
-class SearchEngine:
-    def __init__(self, query_processor):
-        self.query_processor = query_processor
 
-    def process_query_file(self, query_file, output_file):
-        with open(query_file, 'r') as f:
-            queries = f.readlines()
-            result_strings = []
-            for query in queries:
-                result = self.query_processor.process_query(query)
-                result_strings.append(str(result))
-        
-        with open(output_file, 'w') as f:
-            f.write('\n'.join(result_strings))
-        print(f'output written to {output_file}')
-
-if __name__ == "__main__":
-
-    qp = QueryProcessor('./dictionary', './postings')
-    se = SearchEngine(qp)
-
-    se.process_query_file('./queries.txt', './output.txt')
     # print(qp.dictionary)
 
     #query = "bill OR Gates AND (vista OR XP) AND NOT mac"
