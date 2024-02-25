@@ -2,8 +2,9 @@ import re
 import pickle
 from index import linked_list, Node
 
-# should this be a class? like I instantiate a shunting yarder to do
-# all the shunting?
+# efficiency stuff
+# demorgans law
+# for operations of same priority, do the ones for lists with the least number of elements first
 
 class QueryProcessor:
     OPERATOR_OR = 1
