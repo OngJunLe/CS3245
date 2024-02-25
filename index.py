@@ -40,6 +40,18 @@ class linked_list:
             previous_skip_node = skip_node
 
 
+    # defines what happens when you run str() on this
+    def __str__(self):
+        current_node = self.head
+        output = ""
+        while current_node:
+            output += str(current_node.data)
+            if current_node.next:
+                output += " "
+            current_node = current_node.next
+        return output
+
+
 def usage():
     print("usage: " + sys.argv[0] + " -i directory-of-documents -d temp_postings-file -p postings-file")
 
@@ -99,7 +111,9 @@ def build_index(in_dir, out_dict, out_postings):
     output.write(dictionary_binary)
     output.close()
 
-build_index(0,"dictionary","postings")
+# so this doesn't run when this file is imported in other scripts
+if __name__ == "__main__":
+    build_index(0,"dictionary","postings")
 
 '''
 try:
