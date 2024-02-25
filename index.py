@@ -24,21 +24,21 @@ class linked_list:
     def __init__(self):
         self.head = None
     
-    def create_posting(self, list):
-        self.head = Node(list[0])
+    def create_posting(self, list_of_tuples):
+        self.head = Node(list_of_tuples[0][0])
         current_node = self.head
-        skip_length = (len(list) - 1)**0.5
-        for i in range(1, len(list)):
+        for i in range(1, len(list_of_tuples)):
             previous_node = current_node
-            current_node = Node(list[i])
+            current_node = Node(list_of_tuples[i][0])
             previous_node.set_next(current_node)
         previous_skip_node = skip_node = self.head
-        for i in range(int(skip_length)):
-            for j in range(int(skip_length)):
-                skip_node = skip_node.next
-            previous_skip_node.set_skip(skip_node)
-            previous_skip_node = skip_node
-
+        for i in range(len(list_of_tuples)):
+            skip_length = list_of_tuples[i][1]
+            if (skip_length != 0 and (i + skip_length) < len(list_of_tuples)): 
+                for j in range(int(skip_length)):
+                    skip_node = skip_node.next
+                previous_skip_node.set_skip(skip_node)
+                previous_skip_node = skip_node
 
     # defines what happens when you run str() on this
     def __str__(self):
@@ -50,8 +50,7 @@ class linked_list:
                 output += " "
             current_node = current_node.next
         return output
-
-
+    
 def usage():
     print("usage: " + sys.argv[0] + " -i directory-of-documents -d temp_postings-file -p postings-file")
 
@@ -68,52 +67,109 @@ def build_index(in_dir, out_dict, out_postings):
     postings = {} 
     dictionary = {}
     stemmer = nltk.stem.PorterStemmer()
-    for fileid in reuters.fileids(): # Rework when dealing with all data rather than subset
+    memory = 0
+    for fileid in reuters.fileids(): 
         if "training" in fileid:
             file_ids.append(fileid)
-    for fileid in file_ids[:10]:
+    for fileid in file_ids: 
         words = reuters.words(fileid)
         words = [stemmer.stem(word).lower() for word in words if word not in string.punctuation] 
         id = int(fileid.split("/")[-1])
-        while True: # Account for memory overflow later 
-            for word in words:
-                if word in temp_postings:
-                    if id not in temp_postings[word]:
-                        temp_postings[word].append(id)
-                else:
-                    temp_postings[word] = [id]
-            break
-        # Merge logic - implement merging only when memory overflow later 
-        temp_postings_keys = temp_postings.keys() 
-        for key in temp_postings_keys:
-            if key in postings:
-                to_add = set(temp_postings[key]) - set(postings[key])
-                postings[key] += list(to_add)
+        for word in words:
+            if word in temp_postings:
+                if id not in temp_postings[word]:
+                    temp_postings[word].append(id)
             else:
-                postings[key] = temp_postings[key]
+                temp_postings[word] = [id]
 
-    # Write postings and dictionary to disk            
+        memory = sys.getsizeof(temp_postings)
+        if (memory < 1000000): 
+            continue
+        temp_postings_keys = temp_postings.keys() 
+        with open(out_postings, "rb") as input:
+            for key in temp_postings_keys:
+                if key in dictionary:
+                    offset, to_read = dictionary[key]
+                    input.seek(offset)
+                    posting_list = pickle.loads(input.read(to_read))
+                    to_add = list(set(temp_postings[key] + posting_list))
+                    postings[key] = sorted(to_add)
+                    #postings[key] = postings[key] + list(to_add) - giving different values in postings, double check 
+                else:
+                    postings[key] = sorted(temp_postings[key])
+                    #postings[key] = temp_postings[key] - giving different values in postings, double check 
+            for key in dictionary.keys():  # Adding any remaining terms in dictionary to postings
+                if (key not in temp_postings_keys):
+                    offset, to_read = dictionary[key]    
+                    input.seek(offset)    
+                    postings[key] = sorted(pickle.loads(input.read(to_read)))
+        temp_postings = {}
+        temp_postings_keys = []
+        dictionary = {}
+        # In-process writing of blocks to disk         
+        sorted_keys = sorted(list(postings.keys()))   
+        current_offset = 0 
+        with open(out_postings, "wb") as output:
+            for key in sorted_keys:
+                ll_binary = pickle.dumps(postings[key])
+                no_of_bytes = len(ll_binary)
+                dictionary[key] = (current_offset, no_of_bytes)
+                output.write(ll_binary)
+                current_offset += len(ll_binary)
+        postings = {}
+
+    # Change all lists to list of tuples - also account for anything remaining in temp_postings 
+    postings = temp_postings
+    temp_postings = {}
+    with open(out_postings, "rb") as input:
+        for key in dictionary:
+            offset, to_read = dictionary[key]
+            input.seek(offset)
+            if key in postings:    
+                posting_list = pickle.loads(input.read(to_read))
+                to_add = list(set(postings[key] + posting_list))
+                postings[key] = sorted(to_add)
+            else:
+                postings[key] = sorted(pickle.loads(input.read(to_read)))
+    dictionary = {}
     sorted_keys = sorted(list(postings.keys()))   
     current_offset = 0 
-    output = open(out_postings, "wb")
-    for key in sorted_keys:
-        ll = linked_list()
-        ll.create_posting(postings[key])
-        ll_binary = pickle.dumps(ll)
-        no_of_bytes = len(ll_binary)
-        dictionary[key] = (current_offset, no_of_bytes)
-        output.write(ll_binary)
-        current_offset += len(ll_binary)
-    output.close()
+    with open(out_postings, "wb") as output:
+        # Insert universal set as first entry 
+        universal = file_ids
+        skip_length = int(len(universal)**0.5)
+        for i in range(len(universal)):
+            if (i % skip_length == 0 and i != len(universal) - 1):
+                universal[i] = (universal[i], skip_length)
+            else:
+                universal[i] = (universal[i], 0)
+        universal_binary = pickle.dumps(universal)
+        no_of_bytes = len(universal_binary)
+        dictionary[0] = (current_offset, no_of_bytes)
+        output.write(universal_binary)
+        current_offset += len(universal_binary)
+        
+        for key in sorted_keys:
+            to_add = postings[key]
+            skip_length = int(len(to_add)**0.5)
+            for i in range(len(to_add)):
+                if (i % skip_length == 0 and i != len(to_add) - 1):
+                    to_add[i] = (to_add[i], skip_length)
+                else:
+                    to_add[i] = (to_add[i], 0)
+            to_add_binary = pickle.dumps(to_add)
+            no_of_bytes = len(to_add_binary)
+            dictionary[key] = (current_offset, no_of_bytes)
+            output.write(to_add_binary)
+            current_offset += len(to_add_binary)
 
-    output = open(out_dict, "wb")
     dictionary_binary = pickle.dumps(dictionary)
-    output.write(dictionary_binary)
-    output.close()
+    with open(out_dict, "wb") as output:
+        output.write(dictionary_binary)
 
-# so this doesn't run when this file is imported in other scripts
-if __name__ == "__main__":
-    build_index(0,"dictionary","postings")
+
+build_index(0,"dictionary","postings")
+
 
 '''
 try:
