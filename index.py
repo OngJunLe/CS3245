@@ -71,7 +71,7 @@ def build_index(in_dir, out_dict, out_postings):
     for fileid in reuters.fileids(): 
         if "training" in fileid:
             file_ids.append(fileid)
-    for fileid in file_ids: 
+    for fileid in file_ids[:45]: 
         words = reuters.words(fileid)
         words = [stemmer.stem(word).lower() for word in words if word not in string.punctuation] 
         id = int(fileid.split("/")[-1])
@@ -93,11 +93,9 @@ def build_index(in_dir, out_dict, out_postings):
                     input.seek(offset)
                     posting_list = pickle.loads(input.read(to_read))
                     to_add = list(set(temp_postings[key] + posting_list))
-                    postings[key] = sorted(to_add)
-                    #postings[key] = postings[key] + list(to_add) - giving different values in postings, double check 
+                    postings[key] = to_add 
                 else:
-                    postings[key] = sorted(temp_postings[key])
-                    #postings[key] = temp_postings[key] - giving different values in postings, double check 
+                    postings[key] = temp_postings[key] 
             for key in dictionary.keys():  # Adding any remaining terms in dictionary to postings
                 if (key not in temp_postings_keys):
                     offset, to_read = dictionary[key]    
@@ -136,7 +134,7 @@ def build_index(in_dir, out_dict, out_postings):
     current_offset = 0 
     with open(out_postings, "wb") as output:
         # Insert universal set as first entry 
-        universal = file_ids
+        universal = file_ids[:100]
         skip_length = int(len(universal)**0.5)
         for i in range(len(universal)):
             if (i % skip_length == 0 and i != len(universal) - 1):
@@ -145,12 +143,12 @@ def build_index(in_dir, out_dict, out_postings):
                 universal[i] = (universal[i], 0)
         universal_binary = pickle.dumps(universal)
         no_of_bytes = len(universal_binary)
-        dictionary[0] = (current_offset, no_of_bytes)
+        dictionary[0] = (current_offset, no_of_bytes, len(universal))
         output.write(universal_binary)
         current_offset += len(universal_binary)
         
         for key in sorted_keys:
-            to_add = postings[key]
+            to_add = sorted(postings[key])
             skip_length = int(len(to_add)**0.5)
             for i in range(len(to_add)):
                 if (i % skip_length == 0 and i != len(to_add) - 1):
@@ -159,7 +157,7 @@ def build_index(in_dir, out_dict, out_postings):
                     to_add[i] = (to_add[i], 0)
             to_add_binary = pickle.dumps(to_add)
             no_of_bytes = len(to_add_binary)
-            dictionary[key] = (current_offset, no_of_bytes)
+            dictionary[key] = (current_offset, no_of_bytes, len(to_add))
             output.write(to_add_binary)
             current_offset += len(to_add_binary)
 
@@ -168,7 +166,9 @@ def build_index(in_dir, out_dict, out_postings):
         output.write(dictionary_binary)
 
 
-build_index(0,"dictionary","postings")
+# so this doesn't run when this file is imported in other scripts
+if __name__ == "__main__":
+    build_index(0,"dictionary","postings")
 
 
 '''
