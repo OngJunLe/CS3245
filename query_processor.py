@@ -1,6 +1,7 @@
 import re
 import pickle
 from index import LinkedList, Node
+from nltk.stem import PorterStemmer
 
 # efficiency stuff
 # demorgans law
@@ -25,6 +26,7 @@ class QueryProcessor:
     def __init__(self, dictionary_file, postings_file):
         self.dictionary_file = dictionary_file
         self.postings_file = postings_file
+        self.stemmer = PorterStemmer()
         #self.output_file = output_file
         
         with open(dictionary_file, 'rb') as f:
@@ -61,7 +63,7 @@ class QueryProcessor:
             elif token == ")":
                 yield self.RIGHT_PARENTHESIS
             else:
-                yield token.lower()
+                yield self.stemmer.stem(token).lower()
         
     def convert_to_postfix(self, tokens):
         output_queue = []
@@ -252,7 +254,7 @@ class QueryProcessor:
 
 if __name__ == "__main__":
 
-    query = '(american OR analyst) AND NOT assess'
+    query = 'marketing AND expense'
     qp = QueryProcessor('./dictionary', './postings')
 
     # print(qp.process_query(query))
