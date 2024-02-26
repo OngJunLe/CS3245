@@ -1,21 +1,24 @@
 import re
 import pickle
-from index import linked_list, Node
+from index import LinkedList, Node
 
-# should this be a class? like I instantiate a shunting yarder to do
-# all the shunting?
+# efficiency stuff
+# demorgans law
+# for operations of same priority, do the ones for lists with the least number of elements first
+# contradiction check e.g. a AND NOT a
 
 class QueryProcessor:
     OPERATOR_OR = 1
     OPERATOR_AND = 2
     OPERATOR_NOT = 3
-    OPERATOR_LIST = [OPERATOR_OR, OPERATOR_AND, OPERATOR_NOT]
+    LOGICAL_OPERATORS = [OPERATOR_OR, OPERATOR_AND, OPERATOR_NOT]
     # OPERATOR_FUNCTION = {OPERATOR_OR: or_operation, OPERATOR_AND: and_operation, OPERATOR_NOT: not_operation}
 
     LEFT_PARENTHESIS = 0
     RIGHT_PARENTHESIS = -1
+    OPERATOR_LIST = [OPERATOR_OR, OPERATOR_AND, OPERATOR_NOT, LEFT_PARENTHESIS, RIGHT_PARENTHESIS]
 
-    UNIVERSAL_SET_KEY = -999 # define this in index later, shouldn't be defined in this
+    UNIVERSAL_SET_KEY = 0 # define this in index later, shouldn't be defined in this
 
     regex_pattern = r'\bAND\b|\bOR\b|\bNOT\b|[\(\)]|\w+'
 
@@ -30,9 +33,20 @@ class QueryProcessor:
         pass
 
     def process_query(self, query):
-        tokens = self.tokenize_query(query)
-        postfix = self.convert_to_postfix(tokens)
-        return self.evaluate_postfix(postfix)
+        try:
+            tokens = list(self.tokenize_query(query))
+
+            # check for any invalid tokens
+            invalid_tokens = [token for token in tokens if token not in self.dictionary and token not in self.OPERATOR_LIST]
+            if len(invalid_tokens) > 0:
+                return "invalid token(s): " + ", ".join(invalid_tokens)
+
+            postfix = self.convert_to_postfix(tokens)
+            result = self.evaluate_postfix(postfix)
+        except Exception as e:
+            return "ERROR"
+        
+        return str(result)
 
     def tokenize_query(self, query):
         for token in re.findall(self.regex_pattern, query):
@@ -47,7 +61,7 @@ class QueryProcessor:
             elif token == ")":
                 yield self.RIGHT_PARENTHESIS
             else:
-                yield token
+                yield token.lower()
         
     def convert_to_postfix(self, tokens):
         output_queue = []
@@ -55,7 +69,7 @@ class QueryProcessor:
 
         for token in tokens:
             # token = next(tokens)
-            if token in self.OPERATOR_LIST:
+            if token in self.LOGICAL_OPERATORS:
                 while (operator_stack and operator_stack[-1] >= token): # OR AND NOT will never be greater than parenthesis, omit check for parenthesis
                     output_queue.append(operator_stack.pop())
                 operator_stack.append(token)
@@ -69,7 +83,7 @@ class QueryProcessor:
                 operator_stack.pop() # remove the left parenthesis
             else: # token is a term
                 output_queue.append(token)
-        
+
         while operator_stack:
             if operator_stack[-1] in [self.LEFT_PARENTHESIS, self.RIGHT_PARENTHESIS]:
                 raise ValueError("mismatched parenthesis")
@@ -80,7 +94,8 @@ class QueryProcessor:
     def evaluate_postfix(self, postfix):
         eval_stack = []
         for token in postfix:
-            if token in self.OPERATOR_LIST:
+            # print("current token: ", token)
+            if token in self.LOGICAL_OPERATORS:
                 if token == self.OPERATOR_AND:
                     # not sure if this is space inefficient cos it's creating a new list
                     # maybe figure out way to not create a new list
@@ -91,19 +106,46 @@ class QueryProcessor:
                     eval_stack.append(self.not_operation(eval_stack.pop()))
             else:
                 eval_stack.append(self.load_postings_list_from_term(token))
+            # print("eval_stack: ", [len(x) for x in eval_stack], '\n')
         return eval_stack[0]
 
     def load_postings_list_from_term(self, term):
         if term not in self.dictionary:
             raise ValueError(f"'{term}' not found in dictionary")
         
-        offset, bytes_to_read = self.dictionary[term]
+        offset, bytes_to_read, len_list = self.dictionary[term]
 
         # read the postings list from the postings file
         with open(self.postings_file, 'rb') as f:
             f.seek(offset)
             postings_list = pickle.loads(f.read(bytes_to_read))
-            return postings_list
+
+        postings_ll = LinkedList()
+        dummy = Node(None)
+        postings_ll.head = dummy
+        prev_node = dummy
+        prev_skip_node = None
+        skip_distance = -1 # keeps track of how far it is to node that is target of skip pointer
+
+        for doc_id, skip_length in postings_list:
+            new_node = Node(doc_id)
+            prev_node.next = new_node
+            prev_node = new_node
+            
+            # check if skip distance has reached 0
+            skip_distance -= 1
+            if skip_distance == 0:
+                prev_skip_node.skip = new_node
+
+            # if this node has a skip pointer, store it until the node to skip to is found
+            if skip_length != 0:
+                prev_skip_node = new_node
+                skip_distance = skip_length
+
+        postings_ll.head = dummy.next
+        del dummy
+
+        return postings_ll
 
     def and_operation(self, postings1, postings2):
         node1 = postings1.head
@@ -188,10 +230,11 @@ class QueryProcessor:
             return universal_postings
 
         dummy = Node(None)
+        dummy.next = node1
         prev1 = dummy
         universal_postings.head = dummy
 
-        while node1.next is not None and node2.next is not None:
+        while node1 is not None and node2 is not None:
             if node1.data == node2.data:
                 prev1.next = node1.next # prune out the current node1
                 node1 = node1.next
@@ -206,31 +249,20 @@ class QueryProcessor:
         universal_postings.head = dummy.next
         return universal_postings
 
-class SearchEngine:
-    def __init__(self, query_processor):
-        self.query_processor = query_processor
-
-    def process_query_file(self, query_file, output_file):
-        with open(query_file, 'r') as f:
-            queries = f.readlines()
-            result_strings = []
-            for query in queries:
-                result = self.query_processor.process_query(query)
-                result_strings.append(str(result))
-        
-        with open(output_file, 'w') as f:
-            f.write('\n'.join(result_strings))
-        print(f'output written to {output_file}')
 
 if __name__ == "__main__":
 
+    query = '(american OR analyst) AND NOT assess'
     qp = QueryProcessor('./dictionary', './postings')
-    se = SearchEngine(qp)
 
-    se.process_query_file('./queries.txt', './output.txt')
-    # print(qp.dictionary)
+    # print(qp.process_query(query))
 
-    #query = "bill OR Gates AND (vista OR XP) AND NOT mac"
+    # manual processing to catch error
+    tokens = qp.tokenize_query(query)
+    postfix = qp.convert_to_postfix(tokens)
+    print(postfix)
+    result = qp.evaluate_postfix(postfix)
+    print(result)
 
     # with open()
     # query_list = []
@@ -251,9 +283,9 @@ if __name__ == "__main__":
     # print(pl)
     
     # test if and_operation is working correctly
-    # list1 = linked_list()
+    # list1 = LinkedList()
     # list1.create_posting(list(range(0, 40, 1)))
-    # list2 = linked_list()
+    # list2 = LinkedList()
     # list2.create_posting(list(range(0, 40, 3)))
     # qp.and_operation(list2, list1)
     # print(list1)
