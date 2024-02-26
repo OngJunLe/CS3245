@@ -1,9 +1,8 @@
 from query_processor import QueryProcessor
-from index import linked_list, Node # used by QueryProcessor
-import dask
-import dask.bag as db
+from index import LinkedList, Node # used by QueryProcessor
 import dask.distributed as dd
 import os
+import time
 
 class SearchEngine:
     def __init__(self, query_processor):
@@ -20,10 +19,13 @@ class SearchEngine:
             queries = f.readlines()      
 
         # process queries in parallel
-        results = client.map(self.query_processor.process_query, queries)
-        result_strings = []
-        for result in client.gather(results):
-            result_strings.append(str(result))
+        # results = client.map(self.query_processor.process_query, queries)
+        # result_strings = []
+        # for result in client.gather(results):
+        #     result_strings.append(str(result))
+
+        result_strings_future = client.map(self.query_processor.process_query, queries)
+        result_strings = client.gather(result_strings_future)
 
             # result_strings = []
             # for query in queries:
@@ -38,7 +40,13 @@ class SearchEngine:
 
 if __name__ == "__main__":
 
+    start = time.time()
+
     qp = QueryProcessor('./dictionary', './postings')
     se = SearchEngine(qp)
 
     se.process_query_file('./queries.txt', './output.txt')
+
+    end = time.time()
+
+    print(f"script took {end-start} seconds")

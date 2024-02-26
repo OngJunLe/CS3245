@@ -8,6 +8,9 @@ import pickle
 
 from nltk.corpus import reuters
 
+# format of dictionary {term: (offset, no_bytes, len_list), ...}
+# format of postings [(term, skipID), ...]
+
 class Node:
     def __init__(self, data):
         self.data = data
@@ -20,7 +23,7 @@ class Node:
     def set_skip(self, node):
         self.skip = node
 
-class linked_list:
+class LinkedList:
     def __init__(self):
         self.head = None
     
@@ -50,6 +53,15 @@ class linked_list:
                 output += " "
             current_node = current_node.next
         return output
+
+    def __len__(self):
+        length = 0
+        current_node = self.head
+        while current_node:
+            length += 1
+            current_node = current_node.next
+        return length
+
     
 def usage():
     print("usage: " + sys.argv[0] + " -i directory-of-documents -d temp_postings-file -p postings-file")
@@ -71,6 +83,7 @@ def build_index(in_dir, out_dict, out_postings):
     for fileid in reuters.fileids(): 
         if "training" in fileid:
             file_ids.append(fileid)
+
     for fileid in file_ids: 
         words = reuters.words(fileid)
         words = [stemmer.stem(word).lower() for word in words if word not in string.punctuation] 
@@ -134,7 +147,7 @@ def build_index(in_dir, out_dict, out_postings):
     current_offset = 0 
     with open(out_postings, "wb") as output:
         # Insert universal set as first entry 
-        universal = file_ids
+        universal = sorted([int(fileid.split("/")[-1]) for fileid in file_ids])
         skip_length = int(len(universal)**0.5)
         for i in range(len(universal)):
             if (i % skip_length == 0 and i != len(universal) - 1):
@@ -169,6 +182,7 @@ def build_index(in_dir, out_dict, out_postings):
 # so this doesn't run when this file is imported in other scripts
 if __name__ == "__main__":
     build_index(0,"dictionary","postings")
+    print('indexing over')
 
 
 '''
