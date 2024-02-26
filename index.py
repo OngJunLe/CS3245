@@ -71,7 +71,7 @@ def build_index(in_dir, out_dict, out_postings):
     for fileid in reuters.fileids(): 
         if "training" in fileid:
             file_ids.append(fileid)
-    for fileid in file_ids[:45]: 
+    for fileid in file_ids: 
         words = reuters.words(fileid)
         words = [stemmer.stem(word).lower() for word in words if word not in string.punctuation] 
         id = int(fileid.split("/")[-1])
@@ -134,7 +134,7 @@ def build_index(in_dir, out_dict, out_postings):
     current_offset = 0 
     with open(out_postings, "wb") as output:
         # Insert universal set as first entry 
-        universal = file_ids[:100]
+        universal = file_ids
         skip_length = int(len(universal)**0.5)
         for i in range(len(universal)):
             if (i % skip_length == 0 and i != len(universal) - 1):
