@@ -101,7 +101,7 @@ def build_index(in_dir, out_dict, out_postings):
                 temp_postings[word] = [id]
 
         memory = sys.getsizeof(temp_postings)
-        if (memory < 1000000): 
+        if (memory < 2000000): 
             continue
         #In process merging if size of postings dictionary exceeds 1MB
         temp_postings_keys = temp_postings.keys() 
