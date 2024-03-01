@@ -111,14 +111,14 @@ def build_index(in_dir, out_dict, out_postings):
                     posting_list = retrieve_posting(key, dictionary, input)
                     to_add = list(set(temp_postings[key] + posting_list))
                     postings[key] = to_add 
+                    dictionary.pop(key)
                 else:
                     postings[key] = temp_postings[key] 
-            for key in dictionary.keys():  # Adding any remaining terms in dictionary to postings
-                if (key not in temp_postings_keys):
-                    postings[key] = retrieve_posting(key, dictionary, input)
-        temp_postings = {}
-        temp_postings_keys = []
-        dictionary = {}     
+                temp_postings.pop(key)
+            for key in dictionary:  # Adding any remaining terms in dictionary to postings
+                postings[key] = retrieve_posting(key, dictionary, input)
+                dictionary.pop(key)
+        temp_postings_keys = [] 
         sorted_keys = sorted(list(postings.keys()))   
         current_offset = 0 
         with open(out_postings, "wb") as output:
@@ -141,7 +141,8 @@ def build_index(in_dir, out_dict, out_postings):
                 postings[key] = to_add
             else:
                 postings[key] = posting_list
-    dictionary = {}
+            dictionary.pop(key)
+
     sorted_keys = sorted(list(postings.keys()))   
     current_offset = 0 
     # Change all lists to list of tuples (term, skipID)
@@ -194,6 +195,7 @@ with open("postings", "rb") as input:
     posting = pickle.loads(input.read(to_read))
     print ([tuple[0] for tuple in posting])
 # Answer for 20: [1, 10, 100, 1000, 10005, 10011, 10014, 10015, 10018, 10023]
+    
 
 try:
     opts, args = getopt.getopt(sys.argv[1:], 'i:d:p:')
