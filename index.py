@@ -8,8 +8,8 @@ import pickle
 
 from nltk.corpus import reuters
 
-# format of dictionary {term: (offset, no_bytes, len_list), ...}
-# format of postings [(term, skipID), ...]
+# Format of dictionary {term: (offset, no_bytes, len_list), ...}
+# Format of postings [(term, skipID), ...]
 
 class Node:
     def __init__(self, data):
@@ -62,7 +62,12 @@ class LinkedList:
             current_node = current_node.next
         return length
 
-    
+def retrieve_posting(key, dictionary, postings_file):
+    offset, to_read = dictionary[key]
+    postings_file.seek(offset)
+    posting_list = pickle.loads(input.read(to_read))
+    return posting_list
+
 def usage():
     print("usage: " + sys.argv[0] + " -i directory-of-documents -d temp_postings-file -p postings-file")
 
@@ -96,28 +101,24 @@ def build_index(in_dir, out_dict, out_postings):
                 temp_postings[word] = [id]
 
         memory = sys.getsizeof(temp_postings)
-        if (memory < 1000000): 
+        if (memory < 2000000): 
             continue
+        #In process merging if size of postings dictionary exceeds 1MB
         temp_postings_keys = temp_postings.keys() 
         with open(out_postings, "rb") as input:
             for key in temp_postings_keys:
-                if key in dictionary:
-                    offset, to_read = dictionary[key]
-                    input.seek(offset)
-                    posting_list = pickle.loads(input.read(to_read))
+                if key in dictionary: 
+                    posting_list = retrieve_posting(key, dictionary, input)
                     to_add = list(set(temp_postings[key] + posting_list))
                     postings[key] = to_add 
+                    dictionary.pop(key)
                 else:
                     postings[key] = temp_postings[key] 
-            for key in dictionary.keys():  # Adding any remaining terms in dictionary to postings
-                if (key not in temp_postings_keys):
-                    offset, to_read = dictionary[key]    
-                    input.seek(offset)    
-                    postings[key] = sorted(pickle.loads(input.read(to_read)))
-        temp_postings = {}
-        temp_postings_keys = []
-        dictionary = {}
-        # In-process writing of blocks to disk         
+                temp_postings.pop(key)
+            for key in dictionary:  # Adding any remaining terms in dictionary to postings
+                postings[key] = retrieve_posting(key, dictionary, input)
+                dictionary.pop(key)
+        temp_postings_keys = [] 
         sorted_keys = sorted(list(postings.keys()))   
         current_offset = 0 
         with open(out_postings, "wb") as output:
@@ -129,24 +130,24 @@ def build_index(in_dir, out_dict, out_postings):
                 current_offset += len(ll_binary)
         postings = {}
 
-    # Change all lists to list of tuples - also account for anything remaining in temp_postings 
+    # Acount for anything remaining in temp_postings at end of indexing
     postings = temp_postings
     temp_postings = {}
     with open(out_postings, "rb") as input:
         for key in dictionary:
-            offset, to_read = dictionary[key]
-            input.seek(offset)
+            posting_list = retrieve_posting(key, dictionary, input)
             if key in postings:    
-                posting_list = pickle.loads(input.read(to_read))
                 to_add = list(set(postings[key] + posting_list))
-                postings[key] = sorted(to_add)
+                postings[key] = to_add
             else:
-                postings[key] = sorted(pickle.loads(input.read(to_read)))
-    dictionary = {}
+                postings[key] = posting_list
+            dictionary.pop(key)
+
     sorted_keys = sorted(list(postings.keys()))   
     current_offset = 0 
+    # Change all lists to list of tuples (term, skipID)
     with open(out_postings, "wb") as output:
-        # Insert universal set as first entry 
+        # Insert universal set
         universal = sorted([int(fileid.split("/")[-1]) for fileid in file_ids])
         skip_length = int(len(universal)**0.5)
         for i in range(len(universal)):
@@ -179,13 +180,23 @@ def build_index(in_dir, out_dict, out_postings):
         output.write(dictionary_binary)
 
 
-# so this doesn't run when this file is imported in other scripts
+# So this doesn't run when this file is imported in other scripts
 if __name__ == "__main__":
     build_index(0,"dictionary","postings")
     print('indexing over')
 
-
 '''
+with open("dictionary", "rb") as input:
+    dictionary = pickle.loads(input.read())
+
+with open("postings", "rb") as input:
+    offset, to_read, length = dictionary["and"]
+    input.seek(offset)
+    posting = pickle.loads(input.read(to_read))
+    print ([tuple[0] for tuple in posting])
+# Answer for 20: [1, 10, 100, 1000, 10005, 10011, 10014, 10015, 10018, 10023]
+    
+
 try:
     opts, args = getopt.getopt(sys.argv[1:], 'i:d:p:')
 except getopt.GetoptError:
