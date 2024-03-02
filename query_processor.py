@@ -2,6 +2,8 @@ import re
 import pickle
 from index import LinkedList, Node
 from nltk.stem import PorterStemmer
+from itertools import groupby
+import traceback
 
 # efficiency stuff
 # demorgans law
@@ -19,9 +21,8 @@ class QueryProcessor:
     RIGHT_PARENTHESIS = -1
     OPERATOR_LIST = [OPERATOR_OR, OPERATOR_AND, OPERATOR_NOT, LEFT_PARENTHESIS, RIGHT_PARENTHESIS]
 
-    UNIVERSAL_SET_KEY = 0 # define this in index later, shouldn't be defined in this
-
-    regex_pattern = r'\bAND\b|\bOR\b|\bNOT\b|[\(\)]|\w+'
+    regex_pattern = r'\bAND\b|\bOR\b|\bNOT\b|[\(\)]|[^\s()]+'
+    #regex_pattern = r'\bAND\b|\bOR\b|\bNOT\b|[\(\)]|\w+'
 
     def __init__(self, dictionary_file, postings_file):
         self.dictionary_file = dictionary_file
@@ -32,23 +33,60 @@ class QueryProcessor:
         with open(dictionary_file, 'rb') as f:
             self.dictionary = pickle.load(f)
 
+        # add empty set
+        self.dictionary[LinkedList.EMPTY_SET_KEY] = (0, 0, 0)
+
         pass
 
     def process_query(self, query):
         try:
             tokens = list(self.tokenize_query(query))
 
-            # check for any invalid tokens
-            invalid_tokens = [token for token in tokens if token not in self.dictionary and token not in self.OPERATOR_LIST]
+            # check for any invalid tokens and phrase queries
+            invalid_tokens = []
+            prev_token_is_term = False
+            for t in tokens:
+                if t in self.dictionary:
+                    if prev_token_is_term:
+                        return "phrase query detected, please ensure all terms all separated by operators"
+                    elif "&" in t or "|" in t or "~" in t:
+                        invalid_tokens.append(t)
+                    prev_token_is_term = True
+                else:
+                    prev_token_is_term = False
+                    if t not in self.OPERATOR_LIST:
+                        invalid_tokens.append(t)
+
             if len(invalid_tokens) > 0:
                 return "invalid token(s): " + ", ".join(invalid_tokens)
 
+            tokens = self.optimise_query(tokens)
+            
+            if len(tokens) == 0: return ""
+
             postfix = self.convert_to_postfix(tokens)
+
             result = self.evaluate_postfix(postfix)
+            
         except Exception as e:
-            return "ERROR"
+            return "ERROR" + traceback.format_exc()
         
         return str(result)
+    
+    def optimise_query(self, tokens):
+
+        # could have integrated remove_trivial_expressions with rearrange_query, would have allowed for handling trivial expressions with OR
+
+        # remove trivial expressions e.g. a AND NOT a
+        tokens = self.remove_trivial_expressions(tokens)
+
+        # convert subsets of list between parentheses into sublists
+        tokens = self.process_parentheses(tokens)
+
+        # rearrange the query to process terms with the shortest postings list first
+        tokens = self.rearrange_query(tokens)
+
+        return tokens
 
     def tokenize_query(self, query):
         for token in re.findall(self.regex_pattern, query):
@@ -93,6 +131,47 @@ class QueryProcessor:
 
         return output_queue
 
+    def remove_trivial_expressions(self, tokens):
+
+        # remove a AND NOT a, a AND UNIVERSAL_SET, a AND EMPTY_SET, a AND a
+        change = True
+        while change:
+            change = False
+            for i in range(len(tokens)-3,-1,-1):
+                if tokens[i+1] == self.OPERATOR_AND:
+                    if i+3 < len(tokens) and tokens[i] not in self.OPERATOR_LIST and tokens[i] == tokens[i+3] and tokens[i+2] == self.OPERATOR_NOT: # a AND NOT a
+                        tokens[i:i+4] = [LinkedList.EMPTY_SET_KEY]
+                        change = True
+                    elif tokens[i] == LinkedList.UNIVERSAL_SET_KEY or tokens[i+2] == LinkedList.UNIVERSAL_SET_KEY or tokens[i+2] == tokens[i]: # a AND UNIVERSAL_SET, UNIVERSAL_SET AND a, a AND a
+                        tokens[i:i+3] = [tokens[i]]
+                        change = True
+                    elif tokens[i] == LinkedList.EMPTY_SET_KEY or tokens[i+2] == LinkedList.EMPTY_SET_KEY: # a AND EMPTY_SET, EMPTY_SET AND a
+                        tokens[i:i+3] = [LinkedList.EMPTY_SET_KEY]
+                        change = True
+
+        # this doesn't work because AND takes precedence over OR, could be a OR NOT a AND b 
+        # remove a OR NOT a, a OR NOT a, a OR EMPTY_SET, a OR a,  a OR UNIVERSAL_SET
+        # change = True
+        # while change:
+        #     change = False
+        #     for i in range(len(tokens)-4,-1,-1):
+        #         if tokens[i+1] == self.OPERATOR_OR:
+        #             if tokens[i] not in self.OPERATOR_LIST and tokens[i] == tokens[i+3] and tokens[i+2] == self.OPERATOR_NOT: # a OR NOT a 
+        #                 tokens[i:i+4] = [LinkedList.UNIVERSAL_SET_KEY]
+        #             if tokens[i] == LinkedList.EMPTY_SET_KEY or tokens[i+2] == LinkedList.EMPTY_SET_KEY or tokens[i+2] == tokens[i]:
+        #                 tokens[i:i+3] = [tokens[i]]
+        #             if tokens[i+1] == self.OPERATOR_OR and (tokens[i+2] == LinkedList.EMPTY_SET_KEY or tokens[i+2] == tokens[i]):
+        #                 tokens[i:i+3] = [tokens[i]]
+        #             if tokens[i+1] == self.OPERATOR_OR and tokens[i+2] == LinkedList.UNIVERSAL_SET_KEY:
+        #                 tokens[i:i+3] = [LinkedList.UNIVERSAL_SET_KEY]
+
+        # de morgan's law, for NOT a AND NOT b => NOT (a OR b)
+        for i in range(len(tokens)-5,-1,-1):
+            if tokens[i] == self.OPERATOR_NOT and tokens[i+1] not in self.OPERATOR_LIST and tokens[i+2] == self.OPERATOR_AND and tokens[i+3] == self.OPERATOR_NOT and tokens[i+4] not in self.OPERATOR_LIST:
+                tokens[i:i+5] = [self.OPERATOR_NOT, self.LEFT_PARENTHESIS, tokens[i+1], self.OPERATOR_OR, tokens[i+4], self.RIGHT_PARENTHESIS]
+             
+        return tokens
+
     def evaluate_postfix(self, postfix):
         eval_stack = []
         for token in postfix:
@@ -114,6 +193,9 @@ class QueryProcessor:
     def load_postings_list_from_term(self, term):
         if term not in self.dictionary:
             raise ValueError(f"'{term}' not found in dictionary")
+        
+        if term == LinkedList.EMPTY_SET_KEY:
+            return LinkedList()
         
         offset, bytes_to_read, len_list = self.dictionary[term]
 
@@ -223,7 +305,7 @@ class QueryProcessor:
         return postings1
 
     def not_operation(self, postings):
-        universal_postings = self.load_postings_list_from_term(self.UNIVERSAL_SET_KEY)
+        universal_postings = self.load_postings_list_from_term(LinkedList.UNIVERSAL_SET_KEY)
 
         node1 = universal_postings.head
         node2 = postings.head
@@ -250,21 +332,154 @@ class QueryProcessor:
 
         universal_postings.head = dummy.next
         return universal_postings
+    
+    # convert items between parentheses into sublists
+    # e.g. ["a", "b", "(", "c", "(", "d", ")", ")"] -> ["a", "b", ["c", ["d"]]]
+    def process_parentheses(self, lst):
+        stack = [[]]  # stack to collect processed items
+        for item in lst:
+            if item == self.LEFT_PARENTHESIS:
+                stack.append([])  # Start a new sublist when seeing '('
+            elif item == self.RIGHT_PARENTHESIS:
+                last_list = stack.pop()  # end current sublist
+                if last_list: stack[-1].append(last_list)  # add ended sublist to the previous list
+            else:
+                stack[-1].append(item)  # add item to current sublist
+        return stack  # Return the first item in the stack, which is the processed list
+    
+    # apply the recursive rearrange function to the query
+    # then process the results back to list of tokens
+    def rearrange_query(self, query):
+        rearranged_str, _ = self.recursive_rearrange(query)
 
+        # recreate the query from the processed string
+        # mapping for special characters to operators
+        operator_mapping = {'|': self.OPERATOR_OR, '&': self.OPERATOR_AND, '~': self.OPERATOR_NOT, '(': self.LEFT_PARENTHESIS, ')': self.RIGHT_PARENTHESIS}
+        
+        tokens = []
+        token = ''
+        for char in rearranged_str:
+            if char in operator_mapping:
+                if token == '-99' or token == '-100':
+                    tokens.append(int(token))
+                    token = ''
+                elif token:
+                    tokens.append(token)
+                    token = ''
+                tokens.append(operator_mapping[char])
+            else:
+                token += char
+
+        return tokens
+
+        
+    # for a given list, split it by "OR" to obtain sublists that only contain "AND" and "NOT" operations
+    # rearrange each sublist to process terms with the shortest postings list first
+    # rearrange the order of the sublists by the shortest posting list in each sublist
+    # if an encountered term is a list, recursively rearrange it
+    # this function assumes the query is in a valid form, no out of place operators/terms
+    def recursive_rearrange(self, query):
+        # split list by "OR"
+        or_lists = [list(group) for k, group in groupby(query, lambda x: x == self.OPERATOR_OR) if not k] # REFERENCE: https://stackoverflow.com/questions/14529523/python-split-for-lists
+        max_length = self.dictionary[LinkedList.UNIVERSAL_SET_KEY][2]
+
+        # iterate through each sublist that contains "AND" and "NOT" operations
+        for i, or_list in enumerate(or_lists):
+
+            # get lengths of postings list for each term
+            for j, term in reversed(list(enumerate(or_list))):
+                # remove "AND" and "NOT" from list
+                if term == self.OPERATOR_NOT or term == self.OPERATOR_AND:
+                    or_list.pop(j)
+                elif type(term) == list:
+                    if or_list[j-1] == self.OPERATOR_NOT:
+                        term, (shortest_length, longest_length) = self.recursive_rearrange(term)
+                        term = '~' + term
+                        length = max_length - shortest_length # theoretical longest length of this term
+                        or_list[j] = (term, length)
+                    else:
+                        term, (shortest_length, longest_length) = self.recursive_rearrange(term)
+                        or_list[j] = (term, longest_length)
+                else:
+                    assert term in self.dictionary, f"term {term} not found in dictionary"
+                    if or_list[j-1] == self.OPERATOR_NOT:
+                        length = max_length - self.dictionary[term][2]
+                        term = "~" + term
+                    else:
+                        length = self.dictionary[term][2]
+                    or_list[j] = (term, length)
+
+            # sort terms by length of postings list
+            or_list.sort(key=lambda x: x[1]) 
+            
+            # store the new order of the terms and length of shortest postings list
+            # shortest because the max of AND is the shorter of the 2 lists
+            or_lists[i] = ('&'.join([str(x[0]) for x in or_list]), or_list[0][1]) 
+
+        # sort sublists by length of shortest postings list
+        or_lists.sort(key=lambda x: x[1])
+
+        # return the new order of the sublists and range for lengths of this 'term'
+        # shortest possible is just shortest length
+        # longest is addition of all lengths
+        return ('(' + '|'.join([x[0] for x in or_lists]) + ')', (or_lists[0][1], sum(x[1] for x in or_lists))) 
+
+
+# a(33) AND b(55) OR c(22) AND d(44)
+# ab(33) OR cd(22)
+# abcd(33)
+# NOT abcd(100-22?)
 
 if __name__ == "__main__":
 
-    query = 'marketing AND expense'
+    #query = 'employee AND company AND NOT profit AND (analyst OR (yemen AND oman OR (test AND team)) OR american AND meet OR quota AND (loss OR assess AND joy)'
+    #query = 'employee AND company AND PROFIT OR analyst AND american'
+    #query = 'profit AND NOT profit OR NOT profit OR analyst'
+    query = '(american OR analyst) AND NOT assess'
     qp = QueryProcessor('./dictionary', './postings')
 
     # print(qp.process_query(query))
 
     # manual processing to catch error
-    tokens = qp.tokenize_query(query)
-    postfix = qp.convert_to_postfix(tokens)
-    print(postfix)
-    result = qp.evaluate_postfix(postfix)
+    try:
+        tokens = list(qp.tokenize_query(query))
+
+        print('tokens', tokens)
+
+        # check for any invalid tokens and phrase queries
+        invalid_tokens = []
+        prev_token_is_term = False
+        for t in tokens:
+            if t in qp.dictionary:
+                if prev_token_is_term:
+                    print("phrase query detected, please ensure all terms all separated by operators||")
+                    raise ValueError
+                elif "&" in t or "|" in t or "~" in t:
+                    invalid_tokens.append(t)
+                prev_token_is_term = True
+            else:
+                prev_token_is_term = False
+                if t not in qp.OPERATOR_LIST:
+                    invalid_tokens.append(t)
+
+        if len(invalid_tokens) > 0:
+            print("invalid token(s): " + ", ".join(invalid_tokens))
+            raise ValueError
+
+        tokens = qp.optimise_query(tokens)
+
+        postfix = qp.convert_to_postfix(tokens)
+
+        result = qp.evaluate_postfix(postfix)
+            
+    except Exception as e:
+        print("ERROR" + traceback.format_exc())
+    
     print(result)
+    #postfix = qp.convert_to_postfix(tokens)
+    #print(postfix)
+    # result = qp.evaluate_postfix(postfix)
+    # print(result)
 
     # with open()
     # query_list = []
