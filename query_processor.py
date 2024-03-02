@@ -3,7 +3,6 @@ import pickle
 from index import LinkedList, Node
 from nltk.stem import PorterStemmer
 from itertools import groupby
-import traceback
 
 # efficiency stuff
 # demorgans law
@@ -15,28 +14,20 @@ class QueryProcessor:
     OPERATOR_AND = 2
     OPERATOR_NOT = 3
     LOGICAL_OPERATORS = [OPERATOR_OR, OPERATOR_AND, OPERATOR_NOT]
-    # OPERATOR_FUNCTION = {OPERATOR_OR: or_operation, OPERATOR_AND: and_operation, OPERATOR_NOT: not_operation}
 
     LEFT_PARENTHESIS = 0
     RIGHT_PARENTHESIS = -1
     OPERATOR_LIST = [OPERATOR_OR, OPERATOR_AND, OPERATOR_NOT, LEFT_PARENTHESIS, RIGHT_PARENTHESIS]
 
     regex_pattern = r'\bAND\b|\bOR\b|\bNOT\b|[\(\)]|[^\s()]+'
-    #regex_pattern = r'\bAND\b|\bOR\b|\bNOT\b|[\(\)]|\w+'
 
     def __init__(self, dictionary_file, postings_file):
         self.dictionary_file = dictionary_file
         self.postings_file = postings_file
         self.stemmer = PorterStemmer()
-        #self.output_file = output_file
         
         with open(dictionary_file, 'rb') as f:
             self.dictionary = pickle.load(f)
-
-        # add empty set
-        self.dictionary[LinkedList.EMPTY_SET_KEY] = (0, 0, 0)
-
-        pass
 
     def process_query(self, query):
         try:
@@ -69,7 +60,7 @@ class QueryProcessor:
             result = self.evaluate_postfix(postfix)
             
         except Exception as e:
-            return "ERROR" + traceback.format_exc()
+            return "ERROR" + str(e)
         
         return str(result)
     
@@ -102,13 +93,13 @@ class QueryProcessor:
                 yield self.RIGHT_PARENTHESIS
             else:
                 yield self.stemmer.stem(token).lower()
-        
+    
+    # use shunting-yard algorithm to process query into postfix notation
     def convert_to_postfix(self, tokens):
         output_queue = []
         operator_stack = []
 
         for token in tokens:
-            # token = next(tokens)
             if token in self.LOGICAL_OPERATORS:
                 while (operator_stack and operator_stack[-1] >= token): # OR AND NOT will never be greater than parenthesis, omit check for parenthesis
                     output_queue.append(operator_stack.pop())
@@ -172,14 +163,12 @@ class QueryProcessor:
              
         return tokens
 
+    # go through query in postfix notation and add terms to stack/evaluate those on the stack
     def evaluate_postfix(self, postfix):
         eval_stack = []
         for token in postfix:
-            # print("current token: ", token)
             if token in self.LOGICAL_OPERATORS:
                 if token == self.OPERATOR_AND:
-                    # not sure if this is space inefficient cos it's creating a new list
-                    # maybe figure out way to not create a new list
                     eval_stack.append(self.and_operation(eval_stack.pop(), eval_stack.pop()))
                 elif token == self.OPERATOR_OR:
                     eval_stack.append(self.or_operation(eval_stack.pop(), eval_stack.pop()))
@@ -187,9 +176,9 @@ class QueryProcessor:
                     eval_stack.append(self.not_operation(eval_stack.pop()))
             else:
                 eval_stack.append(self.load_postings_list_from_term(token))
-            # print("eval_stack: ", [len(x) for x in eval_stack], '\n')
         return eval_stack[0]
 
+    # given a term, load the postings list from the postings file as a linked list
     def load_postings_list_from_term(self, term):
         if term not in self.dictionary:
             raise ValueError(f"'{term}' not found in dictionary")
@@ -304,6 +293,7 @@ class QueryProcessor:
         postings1.head = dummy.next
         return postings1
 
+    # compare postings list to universal set and remove items that are in the postings list
     def not_operation(self, postings):
         universal_postings = self.load_postings_list_from_term(LinkedList.UNIVERSAL_SET_KEY)
 
@@ -425,10 +415,6 @@ class QueryProcessor:
         return ('(' + '|'.join([x[0] for x in or_lists]) + ')', (or_lists[0][1], sum(x[1] for x in or_lists))) 
 
 
-# a(33) AND b(55) OR c(22) AND d(44)
-# ab(33) OR cd(22)
-# abcd(33)
-# NOT abcd(100-22?)
 
 if __name__ == "__main__":
 
@@ -438,73 +424,6 @@ if __name__ == "__main__":
     query = '(american OR analyst) AND NOT assess'
     qp = QueryProcessor('./dictionary', './postings')
 
-    # print(qp.process_query(query))
-
-    # manual processing to catch error
-    try:
-        tokens = list(qp.tokenize_query(query))
-
-        print('tokens', tokens)
-
-        # check for any invalid tokens and phrase queries
-        invalid_tokens = []
-        prev_token_is_term = False
-        for t in tokens:
-            if t in qp.dictionary:
-                if prev_token_is_term:
-                    print("phrase query detected, please ensure all terms all separated by operators||")
-                    raise ValueError
-                elif "&" in t or "|" in t or "~" in t:
-                    invalid_tokens.append(t)
-                prev_token_is_term = True
-            else:
-                prev_token_is_term = False
-                if t not in qp.OPERATOR_LIST:
-                    invalid_tokens.append(t)
-
-        if len(invalid_tokens) > 0:
-            print("invalid token(s): " + ", ".join(invalid_tokens))
-            raise ValueError
-
-        tokens = qp.optimise_query(tokens)
-
-        postfix = qp.convert_to_postfix(tokens)
-
-        result = qp.evaluate_postfix(postfix)
-            
-    except Exception as e:
-        print("ERROR" + traceback.format_exc())
-    
-    print(result)
-    #postfix = qp.convert_to_postfix(tokens)
-    #print(postfix)
-    # result = qp.evaluate_postfix(postfix)
-    # print(result)
-
-    # with open()
-    # query_list = []
-    # for query in query_list:
-    #     result = qp.process_query(query)
-
-    # print items in current directory
-        # import os
-        # print("Items in current directory:", os.listdir())
-
-    # with open('dictionary', 'rb') as f:
-    #     dictionary = pickle.load(f)
-    # #dictionary = pickle.loads('dictionary')
-    # print(dictionary)
-    # print('b')
-
-    # pl = qp.load_postings_list_from_term('of')
-    # print(pl)
-    
-    # test if and_operation is working correctly
-    # list1 = LinkedList()
-    # list1.create_posting(list(range(0, 40, 1)))
-    # list2 = LinkedList()
-    # list2.create_posting(list(range(0, 40, 3)))
-    # qp.and_operation(list2, list1)
-    # print(list1)
+    print(qp.process_query(query))
                 
 
