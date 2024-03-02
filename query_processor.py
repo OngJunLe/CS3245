@@ -370,7 +370,7 @@ class QueryProcessor:
     # this function assumes the query is in a valid form, no out of place operators/terms
     def recursive_rearrange(self, query):
         # split list by "OR"
-        or_lists = [list(group) for k, group in groupby(query, lambda x: x == self.OPERATOR_OR) if not k] # REFERENCE: https://stackoverflow.com/questions/14529523/python-split-for-lists
+        or_lists = [list(group) for k, group in groupby(query, lambda x: x == self.OPERATOR_OR) if not k]
         max_length = self.dictionary[LinkedList.UNIVERSAL_SET_KEY][2]
 
         # iterate through each sublist that contains "AND" and "NOT" operations
