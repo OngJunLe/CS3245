@@ -190,24 +190,7 @@ def build_index(in_dir, out_dict, out_postings):
     dictionary_binary = pickle.dumps(dictionary)
     with open(out_dict, "wb") as output:
         output.write(dictionary_binary)
-
-
-# So this doesn't run when this file is imported in other scripts
-if __name__ == "__main__":
-    build_index(0,"dictionary","postings")
-    print('indexing over')
-
-'''
-with open("dictionary", "rb") as input:
-    dictionary = pickle.loads(input.read())
-
-with open("postings", "rb") as input:
-    offset, to_read, length = dictionary["and"]
-    input.seek(offset)
-    posting = pickle.loads(input.read(to_read))
-    print ([tuple[0] for tuple in posting])
-# Answer for 20: [1, 10, 100, 1000, 10005, 10011, 10014, 10015, 10018, 10023]
-    
+    print ("indexing over")
 
 try:
     opts, args = getopt.getopt(sys.argv[1:], 'i:d:p:')
@@ -230,4 +213,4 @@ if input_directory == None or output_file_postings == None or output_file_dictio
     sys.exit(2)
 
 build_index(input_directory, output_file_dictionary, output_file_postings)
-'''
+

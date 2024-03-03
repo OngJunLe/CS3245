@@ -415,15 +415,3 @@ class QueryProcessor:
         return ('(' + '|'.join([x[0] for x in or_lists]) + ')', (or_lists[0][1], sum(x[1] for x in or_lists))) 
 
 
-
-if __name__ == "__main__":
-
-    #query = 'employee AND company AND NOT profit AND (analyst OR (yemen AND oman OR (test AND team)) OR american AND meet OR quota AND (loss OR assess AND joy)'
-    #query = 'employee AND company AND PROFIT OR analyst AND american'
-    #query = 'profit AND NOT profit OR NOT profit OR analyst'
-    query = '(american OR analyst) AND NOT assess'
-    qp = QueryProcessor('./dictionary', './postings')
-
-    print(qp.process_query(query))
-                
-
