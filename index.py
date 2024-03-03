@@ -24,6 +24,10 @@ class Node:
         self.skip = node
 
 class LinkedList:
+
+    UNIVERSAL_SET_KEY = -100
+    EMPTY_SET_KEY = -99
+
     def __init__(self):
         self.head = None
     
@@ -157,9 +161,17 @@ def build_index(in_dir, out_dict, out_postings):
                 universal[i] = (universal[i], 0)
         universal_binary = pickle.dumps(universal)
         no_of_bytes = len(universal_binary)
-        dictionary[0] = (current_offset, no_of_bytes, len(universal))
+        dictionary[LinkedList.UNIVERSAL_SET_KEY] = (current_offset, no_of_bytes, len(universal))
         output.write(universal_binary)
         current_offset += len(universal_binary)
+
+        # Insert empty set
+        empty = []
+        empty_binary = pickle.dumps(empty)
+        no_of_bytes = len(empty_binary)
+        dictionary[LinkedList.EMPTY_SET_KEY] = (current_offset, no_of_bytes, len(empty))
+        output.write(empty_binary)
+        current_offset += len(empty_binary)
         
         for key in sorted_keys:
             to_add = sorted(postings[key])
