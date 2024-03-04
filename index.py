@@ -5,6 +5,7 @@ import sys
 import getopt
 import string
 import pickle
+import os
 
 from nltk.corpus import reuters
 
@@ -89,9 +90,8 @@ def build_index(in_dir, out_dict, out_postings):
     dictionary = {}
     stemmer = nltk.stem.PorterStemmer()
     memory = 0
-    for fileid in reuters.fileids(): 
-        if "training" in fileid:
-            file_ids.append(fileid)
+    for fileid in os.listdir(in_dir): 
+        file_ids.append(f"training/{fileid}")
 
     for fileid in file_ids: 
         words = reuters.words(fileid)
@@ -107,7 +107,7 @@ def build_index(in_dir, out_dict, out_postings):
         memory = sys.getsizeof(temp_postings)
         if (memory < 2000000): 
             continue
-        #In process merging if size of postings dictionary exceeds 1MB
+        # Merging if size of postings dictionary exceeds 2MB
         temp_postings_keys = temp_postings.keys() 
         with open(out_postings, "rb") as input:
             for key in temp_postings_keys:
@@ -118,7 +118,7 @@ def build_index(in_dir, out_dict, out_postings):
                     dictionary.pop(key)
                 else:
                     postings[key] = temp_postings[key] 
-                temp_postings.pop(key)
+                temp_postings.pop(key) # Removes processed terms from temporary postings to save memory 
             for key in dictionary:  # Adding any remaining terms in dictionary to postings
                 postings[key] = retrieve_posting(key, dictionary, input)
                 dictionary.pop(key)
@@ -134,7 +134,7 @@ def build_index(in_dir, out_dict, out_postings):
                 current_offset += len(ll_binary)
         postings = {}
 
-    # Acount for anything remaining in temp_postings at end of indexing
+    # Acount for any postings lists remaining in temp_postings at end of indexing due to memory limit not being hit
     postings = temp_postings
     temp_postings = {}
     with open(out_postings, "rb") as input:
@@ -172,7 +172,8 @@ def build_index(in_dir, out_dict, out_postings):
         dictionary[LinkedList.EMPTY_SET_KEY] = (current_offset, no_of_bytes, len(empty))
         output.write(empty_binary)
         current_offset += len(empty_binary)
-        
+
+        # Storing byte offset in dictionary so that postings lists can be retrieved without reading entire file
         for key in sorted_keys:
             to_add = sorted(postings[key])
             skip_length = int(len(to_add)**0.5)
@@ -192,25 +193,28 @@ def build_index(in_dir, out_dict, out_postings):
         output.write(dictionary_binary)
     print ("indexing over")
 
-try:
-    opts, args = getopt.getopt(sys.argv[1:], 'i:d:p:')
-except getopt.GetoptError:
-    usage()
-    sys.exit(2)
+# So this doesn't run when this file is imported in other scripts
+if (__name__ == "__main__"): 
+    input_directory = output_file_dictionary = output_file_postings = None
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], 'i:d:p:')
+    except getopt.GetoptError:
+        usage()
+        sys.exit(2)
 
-for o, a in opts:
-    if o == '-i': # input directory
-        input_directory = a
-    elif o == '-d': # temp_postings file
-        output_file_dictionary = a
-    elif o == '-p': # postings file
-        output_file_postings = a
-    else:
-        assert False, "unhandled option"
+    for o, a in opts:
+        if o == '-i': # input directory
+            input_directory = a
+        elif o == '-d': # temp_postings file
+            output_file_dictionary = a
+        elif o == '-p': # postings file
+            output_file_postings = a
+        else:
+            assert False, "unhandled option"
 
-if input_directory == None or output_file_postings == None or output_file_dictionary == None:
-    usage()
-    sys.exit(2)
+    if input_directory == None or output_file_postings == None or output_file_dictionary == None:
+        usage()
+        sys.exit(2)
 
-build_index(input_directory, output_file_dictionary, output_file_postings)
+    build_index(input_directory, output_file_dictionary, output_file_postings)
 
